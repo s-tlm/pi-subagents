@@ -363,7 +363,7 @@ export interface EnvInfo {
 /**
  * A subagent spawn registered to fire on a schedule.
  *
- * Stored at `<cwd>/.pi/subagent-schedules/<sessionId>.json`. Session-scoped:
+ * Stored at `<agentDir>/subagent-schedules/<sessionId>.json`. Session-scoped:
  * survives `/resume` but resets on `/new`, mirroring pi-chonky-tasks.
  */
 export interface ScheduledSubagent {
@@ -397,8 +397,17 @@ export interface ScheduledSubagent {
   runCount: number;
 }
 
+/** The pi process that runs a store's jobs. Lets readers outside pi tell live stores from orphaned ones. */
+export interface ScheduleStoreOwner {
+  cwd: string;
+  pid: number;
+  /** Set when pi runs inside a herdr pane. */
+  herdrPaneId?: string;
+}
+
 export interface ScheduleStoreData {
   /** For future migrations. */
   version: 1;
+  owner?: ScheduleStoreOwner;
   jobs: ScheduledSubagent[];
 }

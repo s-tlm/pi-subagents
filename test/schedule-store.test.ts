@@ -9,7 +9,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { resolveStorePath, ScheduleStore } from "../src/schedule-store.js";
+import { legacyStorePath, migrateLegacyStore, resolveStorePath, ScheduleStore } from "../src/schedule-store.js";
 import type { ScheduledSubagent } from "../src/types.js";
 
 function makeJob(overrides: Partial<ScheduledSubagent> = {}): ScheduledSubagent {
@@ -40,9 +40,83 @@ describe("ScheduleStore", () => {
     rmSync(tmp, { recursive: true, force: true });
   });
 
-  it("resolveStorePath produces session-scoped path under .pi/subagent-schedules/", () => {
-    const p = resolveStorePath("/repo", "abc123");
-    expect(p).toBe("/repo/.pi/subagent-schedules/abc123.json");
+  it("resolveStorePath puts every session's store in the agent folder", () => {
+    expect(resolveStorePath("abc123", "/agent")).toBe("/agent/subagent-schedules/abc123.json");
+  });
+
+  it("resolveStorePath defaults to PI_CODING_AGENT_DIR", () => {
+    const prev = process.env.PI_CODING_AGENT_DIR;
+    process.env.PI_CODING_AGENT_DIR = tmp;
+    try {
+      expect(resolveStorePath("abc123")).toBe(join(tmp, "subagent-schedules", "abc123.json"));
+    } finally {
+      if (prev == null) delete process.env.PI_CODING_AGENT_DIR;
+      else process.env.PI_CODING_AGENT_DIR = prev;
+    }
+  });
+
+  it("legacyStorePath is the old per-project location", () => {
+    expect(legacyStorePath("/repo", "abc123")).toBe("/repo/.pi/subagent-schedules/abc123.json");
+  });
+
+  describe("migrateLegacyStore", () => {
+    it("moves a legacy store, creating the new folder", () => {
+      const from = legacyStorePath(join(tmp, "repo"), "s");
+      const to = resolveStorePath("s", join(tmp, "agent"));
+      const legacy = new ScheduleStore(from);
+      const job = makeJob();
+      legacy.add(job);
+
+      migrateLegacyStore(from, to);
+
+      expect(existsSync(from)).toBe(false);
+      expect(new ScheduleStore(to).list()).toEqual([job]);
+    });
+
+    it("never overwrites a store that already exists at the new path", () => {
+      const from = join(tmp, "legacy.json");
+      const to = join(tmp, "new.json");
+      new ScheduleStore(from).add(makeJob({ id: "old" }));
+      new ScheduleStore(to).add(makeJob({ id: "current" }));
+
+      migrateLegacyStore(from, to);
+
+      expect(new ScheduleStore(to).list().map((j) => j.id)).toEqual(["current"]);
+      expect(existsSync(from)).toBe(true);
+    });
+
+    it("does nothing when there is no legacy store", () => {
+      const to = join(tmp, "agent", "subagent-schedules", "s.json");
+      migrateLegacyStore(join(tmp, "missing.json"), to);
+      expect(existsSync(join(tmp, "agent"))).toBe(false);
+    });
+  });
+
+  describe("claim", () => {
+    const owner = { cwd: "/repo", pid: 4242, herdrPaneId: "w1:p1" };
+
+    it("rewrites a non-empty store at once with the new owner", () => {
+      const file = join(tmp, "s.json");
+      new ScheduleStore(file).add(makeJob());
+
+      new ScheduleStore(file).claim(owner);
+
+      expect(JSON.parse(readFileSync(file, "utf-8")).owner).toEqual(owner);
+    });
+
+    it("does not create a file for an empty store", () => {
+      const file = join(tmp, "s.json");
+      new ScheduleStore(file).claim(owner);
+      expect(existsSync(file)).toBe(false);
+    });
+
+    it("keeps the owner on later saves", () => {
+      const file = join(tmp, "s.json");
+      const store = new ScheduleStore(file);
+      store.claim(owner);
+      store.add(makeJob());
+      expect(JSON.parse(readFileSync(file, "utf-8")).owner).toEqual(owner);
+    });
   });
 
   it("starts empty and round-trips a job through add/list", () => {

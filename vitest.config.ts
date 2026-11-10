@@ -13,6 +13,9 @@ export default defineConfig({
   // affects modules Vite resolves; without inline the runtime stays externalized).
   test: {
     server: { deps: { inline: [/@earendil-works\/pi-/] } },
+    // Run inside a herdr pane, every booted extension would label that real pane.
+    // test/herdr.test.ts passes its own env to reach a fake socket instead.
+    env: { HERDR_ENV: "" },
     // Local reporting only — deliberately no `thresholds`, and not wired into
     // CI. src/index.ts is mostly the /agents wizard, which is TUI flow with
     // almost no logic and is not worth a fake-TUI harness; any global floor

@@ -28,6 +28,7 @@ import { CompletionOutbox, NOTIFICATION_HOLD_MS } from "./completion-outbox.js";
 import { type RpcHandle, registerRpcHandlers } from "./cross-extension-rpc.js";
 import { loadCustomAgents } from "./custom-agents.js";
 import { GroupJoinManager } from "./group-join.js";
+import { createScheduleLabelReporter, formatScheduleLabel } from "./herdr.js";
 import { isolationParam, resolveAgentInvocationConfig, resolveJoinMode } from "./invocation-config.js";
 import { describeMention, handleBase, isReservedHandle, parseMention, resolveHandleToType, stripAgentPrefix } from "./mention.js";
 import { runMentionClone } from "./mention-clone.js";
@@ -37,7 +38,7 @@ import { getMaxSubagentDepth, setMaxSubagentDepth } from "./nested-tools.js";
 import { createOutputFilePath, ensureOutputFile, getOutputTranscriptDefault, sessionTaskDir, setOutputTranscriptDefault, streamToOutputFile, writeInitialEntry } from "./output-file.js";
 import { getPackageAgentsGate, getPackageWorkflowsGate, invalidatePackageCache, packageNameForPath, seedProjectTrust, setPackageAgentsGate, setPackageWorkflowsGate, setProjectTrusted } from "./package-resources.js";
 import { SubagentScheduler } from "./schedule.js";
-import { resolveStorePath, ScheduleStore } from "./schedule-store.js";
+import { legacyStorePath, migrateLegacyStore, resolveStorePath, ScheduleStore } from "./schedule-store.js";
 import { applyAndEmitLoaded, loadSettings, type SubagentsSettings, saveAndEmitChanged, type ToolDescriptionMode } from "./settings.js";
 import { getForegroundOutcomeNote, getStatusNote, partialOutputSuffix } from "./status-note.js";
 import { type AgentConfig, type AgentInvocation, type AgentMentionMode, type AgentRecord, type JoinMode, type NotificationDetails, type SubagentType, type ViewerMarkdownMode, type WidgetMode } from "./types.js";
@@ -815,17 +816,29 @@ export default function (pi: ExtensionAPI) {
   // schedules reset on /new, restore on /resume.
   const scheduler = new SubagentScheduler();
 
+  // The herdr agent row shows the next armed job. Refreshed on every schedule
+  // event, and on start and stop, which emit none.
+  const reportScheduleLabel = createScheduleLabelReporter();
+  function refreshScheduleLabel(): Promise<void> {
+    const jobs = scheduler.list().map((job) => ({ name: job.name, nextRun: scheduler.getNextRun(job.id) }));
+    return reportScheduleLabel(formatScheduleLabel(jobs));
+  }
+  const unsubScheduleLabel = pi.events.on("subagents:scheduled", () => { void refreshScheduleLabel(); });
+
   function startScheduler(ctx: ExtensionContext) {
     try {
       const sessionId = ctx.sessionManager?.getSessionId?.();
       if (!sessionId) return;  // sessionId not yet available — try again on next event
-      const path = resolveStorePath(ctx.cwd, sessionId);
+      const path = resolveStorePath(sessionId);
+      migrateLegacyStore(legacyStorePath(ctx.cwd, sessionId), path);
       const store = new ScheduleStore(path);
+      store.claim({ cwd: ctx.cwd, pid: process.pid, herdrPaneId: process.env.HERDR_PANE_ID });
       scheduler.start(pi, ctx, manager, store);
       pi.events.emit("subagents:scheduler_ready", { sessionId, jobCount: store.list().length });
+      void refreshScheduleLabel();
     } catch (err) {
       // Scheduling is non-essential — log and move on so the rest of the
-      // extension keeps working if e.g. .pi/ is unwritable.
+      // extension keeps working if e.g. the agent folder is unwritable.
       console.warn("[pi-subagents] Failed to start scheduler:", err);
     }
   }
@@ -1154,6 +1167,9 @@ export default function (pi: ExtensionAPI) {
       delete (globalThis as any)[MANAGER_KEY];
     }
     scheduler.stop();
+    unsubScheduleLabel();
+    // Awaited after dispose below, so the clear overlaps agent shutdown.
+    const labelCleared = reportScheduleLabel("");
     // Before abortAll, and not folded into it: a workflow owns a worker thread
     // as well as its children, and only its own signal terminates that.
     for (const task of workflowTasks.values()) task.abortController.abort();
@@ -1177,6 +1193,7 @@ export default function (pi: ExtensionAPI) {
     // pi awaits this handler, and the process exits right after — unawaited, those
     // handlers would never run. Internally bounded, so a hung one can't strand quit.
     await manager.dispose(pi);
+    await labelCleared;
     // Every agent is stopped and every child session has shut down, so no more
     // `subagents:usage` can arrive. A ledger flushing in its own
     // `session_shutdown` may have run before this handler aborted the agents
@@ -4112,7 +4129,10 @@ Write the file using the write tool. Only write the file, nothing else.`;
           ctx.ui.notify(`Scheduling already ${enabled ? "enabled" : "disabled"}.`, "info");
         } else {
           setSchedulingEnabled(enabled);
-          if (!enabled) scheduler.stop();  // immediate kill — outstanding fires stop ticking
+          if (!enabled) {
+            scheduler.stop();  // immediate kill — outstanding fires stop ticking
+            void refreshScheduleLabel();
+          }
           notifyApplied(
             ctx,
             `Scheduling ${enabled ? "enabled" : "disabled"}. Tool spec change takes effect on next pi session.`,

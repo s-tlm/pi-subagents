@@ -198,7 +198,7 @@ describe("fallbackSubagent gates dispatch through the real Agent tool", () => {
     );
     expect(textOf(result)).toContain("Scheduled");
 
-    const storeDir = join(cwd, ".pi", "subagent-schedules");
+    const storeDir = join(cwd, "agent-dir", "subagent-schedules");
     const jobs = readdirSync(storeDir).flatMap((f) =>
       JSON.parse(readFileSync(join(storeDir, f), "utf-8")).jobs ?? [],
     );
