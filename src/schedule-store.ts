@@ -2,17 +2,19 @@
  * schedule-store.ts — File-backed store for scheduled subagents.
  *
  * Session-scoped: each pi session owns its own schedules at
- * `<cwd>/.pi/subagent-schedules/<sessionId>.json`. `/new` starts a fresh
- * empty store; `/resume` reloads.
+ * `<agentDir>/subagent-schedules/<sessionId>.json`. `/new` starts a fresh
+ * empty store; `/resume` reloads. Every project shares the one folder, so a
+ * reader outside pi, such as a script, can list all schedules.
  *
  * Concurrency model lifted from pi-chonky-tasks/src/task-store.ts: every
  * mutation acquires a PID-based exclusion lock, re-reads the latest state
  * from disk, applies the change, atomic-writes via temp+rename, releases.
  */
 
-import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { ScheduledSubagent, ScheduleStoreData } from "./types.js";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import type { ScheduledSubagent, ScheduleStoreData, ScheduleStoreOwner } from "./types.js";
 
 const LOCK_RETRY_MS = 50;
 const LOCK_MAX_RETRIES = 100;
@@ -50,14 +52,31 @@ function releaseLock(lockPath: string): void {
 }
 
 /** Resolve the storage path for a session-scoped store. */
-export function resolveStorePath(cwd: string, sessionId: string): string {
+export function resolveStorePath(sessionId: string, agentDir = getAgentDir()): string {
+  return join(agentDir, "subagent-schedules", `${sessionId}.json`);
+}
+
+/** Where a session's store lived before stores moved to the agent folder. */
+export function legacyStorePath(cwd: string, sessionId: string): string {
   return join(cwd, ".pi", "subagent-schedules", `${sessionId}.json`);
+}
+
+/**
+ * Move a legacy store to its new path, once, so `/resume` of an older session
+ * keeps its jobs. Copy then delete, not rename: the project can be on another volume.
+ */
+export function migrateLegacyStore(from: string, to: string): void {
+  if (existsSync(to) || !existsSync(from)) return;
+  mkdirSync(dirname(to), { recursive: true });
+  copyFileSync(from, to);
+  unlinkSync(from);
 }
 
 export class ScheduleStore {
   private filePath: string;
   private lockPath: string;
   private jobs = new Map<string, ScheduledSubagent>();
+  private owner: ScheduleStoreOwner | undefined;
 
   constructor(filePath: string) {
     this.filePath = filePath;
@@ -82,7 +101,7 @@ export class ScheduleStore {
 
   /** Atomic write via temp file + rename (POSIX-atomic). */
   private save(): void {
-    const data: ScheduleStoreData = { version: 1, jobs: [...this.jobs.values()] };
+    const data: ScheduleStoreData = { version: 1, owner: this.owner, jobs: [...this.jobs.values()] };
     const tmp = this.filePath + ".tmp";
     writeFileSync(tmp, JSON.stringify(data, null, 2));
     renameSync(tmp, this.filePath);
@@ -100,6 +119,15 @@ export class ScheduleStore {
     } finally {
       releaseLock(this.lockPath);
     }
+  }
+
+  /**
+   * Record the process that runs this store's jobs. A non-empty store is
+   * rewritten at once, so after `/resume` the file names the live pid and pane.
+   */
+  claim(owner: ScheduleStoreOwner): void {
+    this.owner = owner;
+    if (this.jobs.size > 0) this.withLock(() => {});
   }
 
   /** Read-only — returns a snapshot of the in-memory cache. */

@@ -151,7 +151,7 @@ Schedule formats:
 
 When a schedule fires, the spawn runs in background and its completion notification arrives the same way as a manually-spawned background agent's — your parent agent reasons about the result the same way.
 
-Schedules are **session-scoped**: they reset on `/new` and restore on `/resume`. List and cancel via `/agents → Scheduled jobs` (creation is the `Agent` tool's job — there is no parallel manual-create wizard). Storage at `<cwd>/.pi/subagent-schedules/<sessionId>.json` with PID-based file locking for cross-instance safety.
+Schedules are **session-scoped**: they reset on `/new` and restore on `/resume`. List and cancel via `/agents → Scheduled jobs` (creation is the `Agent` tool's job — there is no parallel manual-create wizard). Storage at `~/.pi/agent/subagent-schedules/<sessionId>.json` (under `PI_CODING_AGENT_DIR` when set) with PID-based file locking for cross-instance safety. Every project shares this folder, so a script can list all schedules in one place. Each file has an `owner` with the `cwd` and `pid` of the pi process that runs its jobs, rewritten whenever a session starts. A job only fires while that process is alive, so a dead `pid` means the jobs are orphaned. A session's store from the old `<cwd>/.pi/subagent-schedules/` location moves to the new folder the next time the session starts.
 
 **Disable the feature entirely**: `/agents → Settings → Scheduling → disabled` removes `schedule` from the `Agent` tool spec (no LLM-context cost), hides the menu entry, and stops any active scheduler. The schema-level removal takes effect on the next pi session; the runtime kill is immediate. Re-enable from the same menu.
 

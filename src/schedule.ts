@@ -284,12 +284,14 @@ export class SubagentScheduler {
     const finalize = (status: "success" | "error") => {
       const next = this.getNextRun(id);
       const current = store.get(id);
-      store.update(id, {
+      const updated = store.update(id, {
         lastRun: new Date().toISOString(),
         lastStatus: status,
         runCount: (current?.runCount ?? 0) + 1,
         nextRun: next,
       });
+      // An interval's next run counts from lastRun, so listeners need the new one.
+      if (updated) this.emit({ type: "updated", job: updated });
     };
 
     // AgentManager's promise resolves either way (its .catch returns ""), so we

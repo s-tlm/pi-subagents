@@ -468,6 +468,26 @@ describe("SubagentScheduler — fire path", () => {
       expect(scheduler.list().find(j => j.id === job.id)?.lastStatus).toBe("success");
     });
 
+    it("emits updated when a run settles, so listeners see the new lastRun", async () => {
+      const records = installFaithfulMock();
+      const job = scheduler.addJob({
+        name: "tick", description: "x", schedule: "1h",
+        subagent_type: "general-purpose", prompt: "x",
+      });
+
+      vi.advanceTimersByTime(3_600_000);
+      pi.events.emit.mockClear();
+      const r = [...records.values()][0];
+      r.status = "completed";
+      r.resolve();
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(pi.events.emit).toHaveBeenCalledWith("subagents:scheduled", {
+        type: "updated",
+        job: expect.objectContaining({ id: job.id, lastStatus: "success", runCount: 1 }),
+      });
+    });
+
     it("treats aborted and stopped as errors (terminal failure states)", async () => {
       const records = installFaithfulMock();
       const a = scheduler.addJob({
