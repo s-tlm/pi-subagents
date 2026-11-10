@@ -23,7 +23,6 @@ const SESSION_ID = "store-wiring-session";
 describe("scheduler → schedule store", () => {
   it("moves a legacy store on session start and claims it for this process", async () => {
     const hermetic = hermeticDir();
-    vi.stubEnv("HERDR_PANE_ID", "w1:p1");
     try {
       const legacy = legacyStorePath(hermetic.dir, SESSION_ID);
       const inTwoHours = new Date(Date.now() + 2 * 60 * 60_000).toISOString();
@@ -49,9 +48,8 @@ describe("scheduler → schedule store", () => {
       expect(existsSync(legacy)).toBe(false);
       const stored = JSON.parse(readFileSync(resolveStorePath(SESSION_ID), "utf-8"));
       expect(stored.jobs.map((j: { id: string }) => j.id)).toEqual(["old"]);
-      expect(stored.owner).toEqual({ cwd: hermetic.dir, pid: process.pid, herdrPaneId: "w1:p1" });
+      expect(stored.owner).toEqual({ cwd: hermetic.dir, pid: process.pid });
     } finally {
-      vi.unstubAllEnvs();
       hermetic.restore();
     }
   });

@@ -401,8 +401,6 @@ export interface ScheduledSubagent {
 export interface ScheduleStoreOwner {
   cwd: string;
   pid: number;
-  /** Set when pi runs inside a herdr pane. */
-  herdrPaneId?: string;
 }
 
 export interface ScheduleStoreData {

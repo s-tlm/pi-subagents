@@ -822,7 +822,7 @@ export default function (pi: ExtensionAPI) {
       const path = resolveStorePath(sessionId);
       migrateLegacyStore(legacyStorePath(ctx.cwd, sessionId), path);
       const store = new ScheduleStore(path);
-      store.claim({ cwd: ctx.cwd, pid: process.pid, herdrPaneId: process.env.HERDR_PANE_ID });
+      store.claim({ cwd: ctx.cwd, pid: process.pid });
       scheduler.start(pi, ctx, manager, store);
       pi.events.emit("subagents:scheduler_ready", { sessionId, jobCount: store.list().length });
     } catch (err) {

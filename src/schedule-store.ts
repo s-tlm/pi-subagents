@@ -4,7 +4,7 @@
  * Session-scoped: each pi session owns its own schedules at
  * `<agentDir>/subagent-schedules/<sessionId>.json`. `/new` starts a fresh
  * empty store; `/resume` reloads. Every project shares the one folder, so a
- * reader outside pi (a herdr plugin, a script) can list all schedules.
+ * reader outside pi, such as a script, can list all schedules.
  *
  * Concurrency model lifted from pi-chonky-tasks/src/task-store.ts: every
  * mutation acquires a PID-based exclusion lock, re-reads the latest state

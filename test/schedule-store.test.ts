@@ -93,7 +93,7 @@ describe("ScheduleStore", () => {
   });
 
   describe("claim", () => {
-    const owner = { cwd: "/repo", pid: 4242, herdrPaneId: "w1:p1" };
+    const owner = { cwd: "/repo", pid: 4242 };
 
     it("rewrites a non-empty store at once with the new owner", () => {
       const file = join(tmp, "s.json");
