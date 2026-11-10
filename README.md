@@ -145,13 +145,6 @@ When a schedule fires, the spawn runs in background and its completion notificat
 
 Schedules are **session-scoped**: they reset on `/new` and restore on `/resume`. List and cancel via `/agents → Scheduled jobs` (creation is the `Agent` tool's job — there is no parallel manual-create wizard). Storage at `~/.pi/agent/subagent-schedules/<sessionId>.json` (under `PI_CODING_AGENT_DIR` when set) with PID-based file locking for cross-instance safety. Every project shares this folder, so a script or a herdr plugin can list all schedules in one place. Each file has an `owner` with the `cwd`, `pid` and `herdrPaneId` of the pi process that runs its jobs, rewritten whenever a session starts. A job only fires while that process is alive, so a dead `pid` means the jobs are orphaned. A session's store from the old `<cwd>/.pi/subagent-schedules/` location moves to the new folder the next time the session starts.
 
-**Herdr label**: inside a [herdr](https://herdr.dev) pane, the extension sets a `schedule` pane token to the next armed job, for example `⏰ Fri 08:00 Check GAM sync +1`, where `+1` counts the other armed jobs. Runs six or more days out show the date instead of the weekday. To show it on pi's agent rows, add a row with `$schedule` to herdr's `config.toml`. Herdr drops a row whose tokens are all empty, so the row only appears while a job is armed:
-
-```toml
-[ui.sidebar.agents.rows_by_agent]
-pi = [["state_icon", "machine", "workspace", "tab"], ["agent"], ["$schedule"]]
-```
-
 **Disable the feature entirely**: `/agents → Settings → Scheduling → disabled` removes `schedule` from the `Agent` tool spec (no LLM-context cost), hides the menu entry, and stops any active scheduler. The schema-level removal takes effect on the next pi session; the runtime kill is immediate. Re-enable from the same menu.
 
 Restrictions:
@@ -1096,7 +1089,6 @@ src/
   abortable.ts        # Race a wait against Esc without cancelling the background child
   completion-outbox.ts # Deliver completion notifications at the parent's next boundary, coalesced
   group-join.ts       # `group` join mode: one notification per turn's batch, with timeout
-  herdr.ts            # Next scheduled run as a herdr pane token (`$schedule`)
   status-note.ts      # Honest status note + salvaged partial output for non-normal outcomes
   agent-record-entry.ts # The `subagents:record` session entry a finished agent leaves; get_subagent_result's fallback, and what resume reopens an evicted agent from
   usage.ts            # Token usage shapes, accumulators, session-stats readers
